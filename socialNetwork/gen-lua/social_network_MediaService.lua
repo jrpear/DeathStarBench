@@ -125,10 +125,10 @@ function ComposeMedia_args:read(iprot)
     elseif fid == 2 then
       if ftype == TType.LIST then
         self.media_types = {}
-        local _etype331, _size328 = iprot:readListBegin()
-        for _i=1,_size328 do
-          local _elem332 = iprot:readString()
-          table.insert(self.media_types, _elem332)
+        local _etype343, _size340 = iprot:readListBegin()
+        for _i=1,_size340 do
+          local _elem344 = iprot:readString()
+          table.insert(self.media_types, _elem344)
         end
         iprot:readListEnd()
       else
@@ -137,10 +137,10 @@ function ComposeMedia_args:read(iprot)
     elseif fid == 3 then
       if ftype == TType.LIST then
         self.media_ids = {}
-        local _etype336, _size333 = iprot:readListBegin()
-        for _i=1,_size333 do
-          local _elem337 = iprot:readI64()
-          table.insert(self.media_ids, _elem337)
+        local _etype348, _size345 = iprot:readListBegin()
+        for _i=1,_size345 do
+          local _elem349 = iprot:readI64()
+          table.insert(self.media_ids, _elem349)
         end
         iprot:readListEnd()
       else
@@ -149,11 +149,11 @@ function ComposeMedia_args:read(iprot)
     elseif fid == 4 then
       if ftype == TType.MAP then
         self.carrier = {}
-        local _ktype339, _vtype340, _size338 = iprot:readMapBegin() 
-        for _i=1,_size338 do
-          local _key342 = iprot:readString()
-          local _val343 = iprot:readString()
-          self.carrier[_key342] = _val343
+        local _ktype351, _vtype352, _size350 = iprot:readMapBegin() 
+        for _i=1,_size350 do
+          local _key354 = iprot:readString()
+          local _val355 = iprot:readString()
+          self.carrier[_key354] = _val355
         end
         iprot:readMapEnd()
       else
@@ -177,8 +177,8 @@ function ComposeMedia_args:write(oprot)
   if self.media_types ~= nil then
     oprot:writeFieldBegin('media_types', TType.LIST, 2)
     oprot:writeListBegin(TType.STRING, #self.media_types)
-    for _,iter344 in ipairs(self.media_types) do
-      oprot:writeString(iter344)
+    for _,iter356 in ipairs(self.media_types) do
+      oprot:writeString(iter356)
     end
     oprot:writeListEnd()
     oprot:writeFieldEnd()
@@ -186,8 +186,8 @@ function ComposeMedia_args:write(oprot)
   if self.media_ids ~= nil then
     oprot:writeFieldBegin('media_ids', TType.LIST, 3)
     oprot:writeListBegin(TType.I64, #self.media_ids)
-    for _,iter345 in ipairs(self.media_ids) do
-      oprot:writeI64(iter345)
+    for _,iter357 in ipairs(self.media_ids) do
+      oprot:writeI64(iter357)
     end
     oprot:writeListEnd()
     oprot:writeFieldEnd()
@@ -195,9 +195,9 @@ function ComposeMedia_args:write(oprot)
   if self.carrier ~= nil then
     oprot:writeFieldBegin('carrier', TType.MAP, 4)
     oprot:writeMapBegin(TType.STRING, TType.STRING, ttable_size(self.carrier))
-    for kiter346,viter347 in pairs(self.carrier) do
-      oprot:writeString(kiter346)
-      oprot:writeString(viter347)
+    for kiter358,viter359 in pairs(self.carrier) do
+      oprot:writeString(kiter358)
+      oprot:writeString(viter359)
     end
     oprot:writeMapEnd()
     oprot:writeFieldEnd()
@@ -220,11 +220,11 @@ function ComposeMedia_result:read(iprot)
     elseif fid == 0 then
       if ftype == TType.LIST then
         self.success = {}
-        local _etype351, _size348 = iprot:readListBegin()
-        for _i=1,_size348 do
-          local _elem352 = Media:new{}
-          _elem352:read(iprot)
-          table.insert(self.success, _elem352)
+        local _etype363, _size360 = iprot:readListBegin()
+        for _i=1,_size360 do
+          local _elem364 = Media:new{}
+          _elem364:read(iprot)
+          table.insert(self.success, _elem364)
         end
         iprot:readListEnd()
       else
@@ -250,8 +250,8 @@ function ComposeMedia_result:write(oprot)
   if self.success ~= nil then
     oprot:writeFieldBegin('success', TType.LIST, 0)
     oprot:writeListBegin(TType.STRUCT, #self.success)
-    for _,iter353 in ipairs(self.success) do
-      iter353:write(oprot)
+    for _,iter365 in ipairs(self.success) do
+      iter365:write(oprot)
     end
     oprot:writeListEnd()
     oprot:writeFieldEnd()

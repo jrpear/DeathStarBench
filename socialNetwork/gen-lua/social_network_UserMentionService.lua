@@ -123,10 +123,10 @@ function ComposeUserMentions_args:read(iprot)
     elseif fid == 2 then
       if ftype == TType.LIST then
         self.usernames = {}
-        local _etype271, _size268 = iprot:readListBegin()
-        for _i=1,_size268 do
-          local _elem272 = iprot:readString()
-          table.insert(self.usernames, _elem272)
+        local _etype283, _size280 = iprot:readListBegin()
+        for _i=1,_size280 do
+          local _elem284 = iprot:readString()
+          table.insert(self.usernames, _elem284)
         end
         iprot:readListEnd()
       else
@@ -135,11 +135,11 @@ function ComposeUserMentions_args:read(iprot)
     elseif fid == 3 then
       if ftype == TType.MAP then
         self.carrier = {}
-        local _ktype274, _vtype275, _size273 = iprot:readMapBegin() 
-        for _i=1,_size273 do
-          local _key277 = iprot:readString()
-          local _val278 = iprot:readString()
-          self.carrier[_key277] = _val278
+        local _ktype286, _vtype287, _size285 = iprot:readMapBegin() 
+        for _i=1,_size285 do
+          local _key289 = iprot:readString()
+          local _val290 = iprot:readString()
+          self.carrier[_key289] = _val290
         end
         iprot:readMapEnd()
       else
@@ -163,8 +163,8 @@ function ComposeUserMentions_args:write(oprot)
   if self.usernames ~= nil then
     oprot:writeFieldBegin('usernames', TType.LIST, 2)
     oprot:writeListBegin(TType.STRING, #self.usernames)
-    for _,iter279 in ipairs(self.usernames) do
-      oprot:writeString(iter279)
+    for _,iter291 in ipairs(self.usernames) do
+      oprot:writeString(iter291)
     end
     oprot:writeListEnd()
     oprot:writeFieldEnd()
@@ -172,9 +172,9 @@ function ComposeUserMentions_args:write(oprot)
   if self.carrier ~= nil then
     oprot:writeFieldBegin('carrier', TType.MAP, 3)
     oprot:writeMapBegin(TType.STRING, TType.STRING, ttable_size(self.carrier))
-    for kiter280,viter281 in pairs(self.carrier) do
-      oprot:writeString(kiter280)
-      oprot:writeString(viter281)
+    for kiter292,viter293 in pairs(self.carrier) do
+      oprot:writeString(kiter292)
+      oprot:writeString(viter293)
     end
     oprot:writeMapEnd()
     oprot:writeFieldEnd()
@@ -197,11 +197,11 @@ function ComposeUserMentions_result:read(iprot)
     elseif fid == 0 then
       if ftype == TType.LIST then
         self.success = {}
-        local _etype285, _size282 = iprot:readListBegin()
-        for _i=1,_size282 do
-          local _elem286 = UserMention:new{}
-          _elem286:read(iprot)
-          table.insert(self.success, _elem286)
+        local _etype297, _size294 = iprot:readListBegin()
+        for _i=1,_size294 do
+          local _elem298 = UserMention:new{}
+          _elem298:read(iprot)
+          table.insert(self.success, _elem298)
         end
         iprot:readListEnd()
       else
@@ -227,8 +227,8 @@ function ComposeUserMentions_result:write(oprot)
   if self.success ~= nil then
     oprot:writeFieldBegin('success', TType.LIST, 0)
     oprot:writeListBegin(TType.STRUCT, #self.success)
-    for _,iter287 in ipairs(self.success) do
-      iter287:write(oprot)
+    for _,iter299 in ipairs(self.success) do
+      iter299:write(oprot)
     end
     oprot:writeListEnd()
     oprot:writeFieldEnd()

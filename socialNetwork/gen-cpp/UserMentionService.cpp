@@ -46,14 +46,14 @@ uint32_t UserMentionService_ComposeUserMentions_args::read(::apache::thrift::pro
         if (ftype == ::apache::thrift::protocol::T_LIST) {
           {
             this->usernames.clear();
-            uint32_t _size340;
-            ::apache::thrift::protocol::TType _etype343;
-            xfer += iprot->readListBegin(_etype343, _size340);
-            this->usernames.resize(_size340);
-            uint32_t _i344;
-            for (_i344 = 0; _i344 < _size340; ++_i344)
+            uint32_t _size362;
+            ::apache::thrift::protocol::TType _etype365;
+            xfer += iprot->readListBegin(_etype365, _size362);
+            this->usernames.resize(_size362);
+            uint32_t _i366;
+            for (_i366 = 0; _i366 < _size362; ++_i366)
             {
-              xfer += iprot->readString(this->usernames[_i344]);
+              xfer += iprot->readString(this->usernames[_i366]);
             }
             xfer += iprot->readListEnd();
           }
@@ -66,17 +66,17 @@ uint32_t UserMentionService_ComposeUserMentions_args::read(::apache::thrift::pro
         if (ftype == ::apache::thrift::protocol::T_MAP) {
           {
             this->carrier.clear();
-            uint32_t _size345;
-            ::apache::thrift::protocol::TType _ktype346;
-            ::apache::thrift::protocol::TType _vtype347;
-            xfer += iprot->readMapBegin(_ktype346, _vtype347, _size345);
-            uint32_t _i349;
-            for (_i349 = 0; _i349 < _size345; ++_i349)
+            uint32_t _size367;
+            ::apache::thrift::protocol::TType _ktype368;
+            ::apache::thrift::protocol::TType _vtype369;
+            xfer += iprot->readMapBegin(_ktype368, _vtype369, _size367);
+            uint32_t _i371;
+            for (_i371 = 0; _i371 < _size367; ++_i371)
             {
-              std::string _key350;
-              xfer += iprot->readString(_key350);
-              std::string& _val351 = this->carrier[_key350];
-              xfer += iprot->readString(_val351);
+              std::string _key372;
+              xfer += iprot->readString(_key372);
+              std::string& _val373 = this->carrier[_key372];
+              xfer += iprot->readString(_val373);
             }
             xfer += iprot->readMapEnd();
           }
@@ -109,10 +109,10 @@ uint32_t UserMentionService_ComposeUserMentions_args::write(::apache::thrift::pr
   xfer += oprot->writeFieldBegin("usernames", ::apache::thrift::protocol::T_LIST, 2);
   {
     xfer += oprot->writeListBegin(::apache::thrift::protocol::T_STRING, static_cast<uint32_t>(this->usernames.size()));
-    std::vector<std::string> ::const_iterator _iter352;
-    for (_iter352 = this->usernames.begin(); _iter352 != this->usernames.end(); ++_iter352)
+    std::vector<std::string> ::const_iterator _iter374;
+    for (_iter374 = this->usernames.begin(); _iter374 != this->usernames.end(); ++_iter374)
     {
-      xfer += oprot->writeString((*_iter352));
+      xfer += oprot->writeString((*_iter374));
     }
     xfer += oprot->writeListEnd();
   }
@@ -121,11 +121,11 @@ uint32_t UserMentionService_ComposeUserMentions_args::write(::apache::thrift::pr
   xfer += oprot->writeFieldBegin("carrier", ::apache::thrift::protocol::T_MAP, 3);
   {
     xfer += oprot->writeMapBegin(::apache::thrift::protocol::T_STRING, ::apache::thrift::protocol::T_STRING, static_cast<uint32_t>(this->carrier.size()));
-    std::map<std::string, std::string> ::const_iterator _iter353;
-    for (_iter353 = this->carrier.begin(); _iter353 != this->carrier.end(); ++_iter353)
+    std::map<std::string, std::string> ::const_iterator _iter375;
+    for (_iter375 = this->carrier.begin(); _iter375 != this->carrier.end(); ++_iter375)
     {
-      xfer += oprot->writeString(_iter353->first);
-      xfer += oprot->writeString(_iter353->second);
+      xfer += oprot->writeString(_iter375->first);
+      xfer += oprot->writeString(_iter375->second);
     }
     xfer += oprot->writeMapEnd();
   }
@@ -153,10 +153,10 @@ uint32_t UserMentionService_ComposeUserMentions_pargs::write(::apache::thrift::p
   xfer += oprot->writeFieldBegin("usernames", ::apache::thrift::protocol::T_LIST, 2);
   {
     xfer += oprot->writeListBegin(::apache::thrift::protocol::T_STRING, static_cast<uint32_t>((*(this->usernames)).size()));
-    std::vector<std::string> ::const_iterator _iter354;
-    for (_iter354 = (*(this->usernames)).begin(); _iter354 != (*(this->usernames)).end(); ++_iter354)
+    std::vector<std::string> ::const_iterator _iter376;
+    for (_iter376 = (*(this->usernames)).begin(); _iter376 != (*(this->usernames)).end(); ++_iter376)
     {
-      xfer += oprot->writeString((*_iter354));
+      xfer += oprot->writeString((*_iter376));
     }
     xfer += oprot->writeListEnd();
   }
@@ -165,11 +165,11 @@ uint32_t UserMentionService_ComposeUserMentions_pargs::write(::apache::thrift::p
   xfer += oprot->writeFieldBegin("carrier", ::apache::thrift::protocol::T_MAP, 3);
   {
     xfer += oprot->writeMapBegin(::apache::thrift::protocol::T_STRING, ::apache::thrift::protocol::T_STRING, static_cast<uint32_t>((*(this->carrier)).size()));
-    std::map<std::string, std::string> ::const_iterator _iter355;
-    for (_iter355 = (*(this->carrier)).begin(); _iter355 != (*(this->carrier)).end(); ++_iter355)
+    std::map<std::string, std::string> ::const_iterator _iter377;
+    for (_iter377 = (*(this->carrier)).begin(); _iter377 != (*(this->carrier)).end(); ++_iter377)
     {
-      xfer += oprot->writeString(_iter355->first);
-      xfer += oprot->writeString(_iter355->second);
+      xfer += oprot->writeString(_iter377->first);
+      xfer += oprot->writeString(_iter377->second);
     }
     xfer += oprot->writeMapEnd();
   }
@@ -210,14 +210,14 @@ uint32_t UserMentionService_ComposeUserMentions_result::read(::apache::thrift::p
         if (ftype == ::apache::thrift::protocol::T_LIST) {
           {
             this->success.clear();
-            uint32_t _size356;
-            ::apache::thrift::protocol::TType _etype359;
-            xfer += iprot->readListBegin(_etype359, _size356);
-            this->success.resize(_size356);
-            uint32_t _i360;
-            for (_i360 = 0; _i360 < _size356; ++_i360)
+            uint32_t _size378;
+            ::apache::thrift::protocol::TType _etype381;
+            xfer += iprot->readListBegin(_etype381, _size378);
+            this->success.resize(_size378);
+            uint32_t _i382;
+            for (_i382 = 0; _i382 < _size378; ++_i382)
             {
-              xfer += this->success[_i360].read(iprot);
+              xfer += this->success[_i382].read(iprot);
             }
             xfer += iprot->readListEnd();
           }
@@ -256,10 +256,10 @@ uint32_t UserMentionService_ComposeUserMentions_result::write(::apache::thrift::
     xfer += oprot->writeFieldBegin("success", ::apache::thrift::protocol::T_LIST, 0);
     {
       xfer += oprot->writeListBegin(::apache::thrift::protocol::T_STRUCT, static_cast<uint32_t>(this->success.size()));
-      std::vector<UserMention> ::const_iterator _iter361;
-      for (_iter361 = this->success.begin(); _iter361 != this->success.end(); ++_iter361)
+      std::vector<UserMention> ::const_iterator _iter383;
+      for (_iter383 = this->success.begin(); _iter383 != this->success.end(); ++_iter383)
       {
-        xfer += (*_iter361).write(oprot);
+        xfer += (*_iter383).write(oprot);
       }
       xfer += oprot->writeListEnd();
     }
@@ -304,14 +304,14 @@ uint32_t UserMentionService_ComposeUserMentions_presult::read(::apache::thrift::
         if (ftype == ::apache::thrift::protocol::T_LIST) {
           {
             (*(this->success)).clear();
-            uint32_t _size362;
-            ::apache::thrift::protocol::TType _etype365;
-            xfer += iprot->readListBegin(_etype365, _size362);
-            (*(this->success)).resize(_size362);
-            uint32_t _i366;
-            for (_i366 = 0; _i366 < _size362; ++_i366)
+            uint32_t _size384;
+            ::apache::thrift::protocol::TType _etype387;
+            xfer += iprot->readListBegin(_etype387, _size384);
+            (*(this->success)).resize(_size384);
+            uint32_t _i388;
+            for (_i388 = 0; _i388 < _size384; ++_i388)
             {
-              xfer += (*(this->success))[_i366].read(iprot);
+              xfer += (*(this->success))[_i388].read(iprot);
             }
             xfer += iprot->readListEnd();
           }

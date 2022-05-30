@@ -265,6 +265,36 @@ service SocialGraphService{
   ) throws (1: ServiceException se)
 }
 
+service SocialGraphStorageService {
+  list<i64> ReadFollowers(
+      1: i64 user_id
+  )
+
+  list<i64> ReadFollowees(
+      1: i64 user_id
+  )
+
+  void AddFollower(
+      1: i64 followee_id,
+      2: i64 follower_id
+  )
+
+  void AddFollowee(
+      1: i64 follower_id,
+      2: i64 followee_id
+  )
+
+  void RemoveFollower(
+      1: i64 followee_id,
+      2: i64 follower_id
+  )
+
+  void RemoveFollowee(
+      1: i64 follower_id
+      2: i64 followee_id,
+  )
+}
+
 service UserMentionService {
   list<UserMention> ComposeUserMentions(
       1: i64 req_id,
