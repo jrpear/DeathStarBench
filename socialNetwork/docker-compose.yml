@@ -145,25 +145,11 @@ services:
     depends_on:
       jaeger-agent:
         condition: service_started
-      user-mongodb:
+      user-storage-service:
         condition: service_started
     entrypoint: UserService
     volumes:
       - ./config:/social-network-microservices/config
-
-  user-memcached:
-    image: memcached
-    hostname: user-memcached
-    #    ports:
-    #      - 11214:11211
-    restart: always
-
-  user-mongodb:
-    image: mongo:4.4.6
-    hostname: user-mongodb
-    # ports:
-    #   - 27023:27017
-    restart: always
 
   user-storage-service:
     image: yg397/social-network-microservices:latest
