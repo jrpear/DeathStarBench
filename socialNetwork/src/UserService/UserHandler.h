@@ -329,6 +329,7 @@ void UserHandler::Login(std::string &_return, int64_t req_id,
     LOG(error) << "Failed to find_user in user-storage-client";
     throw;
   }
+  _user_storage_client_pool->Keepalive(user_storage_client_wrapper);
   find_span->Finish();
 
   if (u.user_id != -1) {
@@ -409,6 +410,7 @@ int64_t UserHandler::GetUserId(
     LOG(debug) << "User: " << username << " found in MongoDB";
   }
 
+  _user_storage_client_pool->Keepalive(user_storage_client_wrapper);
   span->Finish();
   return u.user_id;
 }
