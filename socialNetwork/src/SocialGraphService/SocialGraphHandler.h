@@ -1,10 +1,6 @@
 #ifndef SOCIAL_NETWORK_MICROSERVICES_SOCIALGRAPHHANDLER_H
 #define SOCIAL_NETWORK_MICROSERVICES_SOCIALGRAPHHANDLER_H
 
-#include <bson/bson.h>
-#include <mongoc.h>
-#include <sw/redis++/redis++.h>
-
 #include <chrono>
 #include <future>
 #include <iostream>
@@ -13,13 +9,12 @@
 #include <vector>
 
 #include "../../gen-cpp/SocialGraphService.h"
+#include "../../gen-cpp/SocialGraphStorageService.h"
 #include "../../gen-cpp/UserService.h"
 #include "../ClientPool.h"
 #include "../ThriftClient.h"
 #include "../logger.h"
 #include "../tracing.h"
-
-using namespace sw::redis;
 
 namespace social_network {
 
@@ -29,9 +24,7 @@ using std::chrono::system_clock;
 
 class SocialGraphHandler : public SocialGraphServiceIf {
  public:
-  SocialGraphHandler(mongoc_client_pool_t *, Redis *,
-                     ClientPool<ThriftClient<UserServiceClient>> *);
-  SocialGraphHandler(mongoc_client_pool_t *, RedisCluster *,
+  SocialGraphHandler(ClientPool<ThriftClient<SocialGraphStorageServiceClient>> *,
                      ClientPool<ThriftClient<UserServiceClient>> *);
   ~SocialGraphHandler() override = default;
   void GetFollowers(std::vector<int64_t> &, int64_t, int64_t,
@@ -51,28 +44,14 @@ class SocialGraphHandler : public SocialGraphServiceIf {
                   const std::map<std::string, std::string> &) override;
 
  private:
-  mongoc_client_pool_t *_mongodb_client_pool;
-  Redis *_redis_client_pool;
-  RedisCluster *_redis_cluster_client_pool;
+  ClientPool<ThriftClient<SocialGraphStorageServiceClient>> *_social_graph_storage_client_pool;
   ClientPool<ThriftClient<UserServiceClient>> *_user_service_client_pool;
 };
 
 SocialGraphHandler::SocialGraphHandler(
-    mongoc_client_pool_t *mongodb_client_pool, Redis *redis_client_pool,
+    ClientPool<ThriftClient<SocialGraphStorageServiceClient>> *social_graph_storage_client_pool,
     ClientPool<ThriftClient<UserServiceClient>> *user_service_client_pool) {
-  _mongodb_client_pool = mongodb_client_pool;
-  _redis_client_pool = redis_client_pool;
-  _redis_cluster_client_pool = nullptr;
-  _user_service_client_pool = user_service_client_pool;
-}
-
-SocialGraphHandler::SocialGraphHandler(
-    mongoc_client_pool_t *mongodb_client_pool,
-    RedisCluster *redis_cluster_client_pool,
-    ClientPool<ThriftClient<UserServiceClient>> *user_service_client_pool) {
-  _mongodb_client_pool = mongodb_client_pool;
-  _redis_client_pool = nullptr;
-  _redis_cluster_client_pool = redis_cluster_client_pool;
+  _social_graph_storage_client_pool = social_graph_storage_client_pool;
   _user_service_client_pool = user_service_client_pool;
 }
 
@@ -92,165 +71,54 @@ void SocialGraphHandler::Follow(
       duration_cast<milliseconds>(system_clock::now().time_since_epoch())
           .count();
 
-  std::future<void> mongo_update_follower_future =
+  std::future<void> update_follower_future =
       std::async(std::launch::async, [&]() {
-        mongoc_client_t *mongodb_client =
-            mongoc_client_pool_pop(_mongodb_client_pool);
-        if (!mongodb_client) {
+        auto social_graph_storage_client_wrapper = _social_graph_storage_client_pool->Pop();
+        if (!social_graph_storage_client_wrapper) {
           ServiceException se;
-          se.errorCode = ErrorCode::SE_MONGODB_ERROR;
-          se.message = "Failed to pop a client from MongoDB pool";
+          se.errorCode = ErrorCode::SE_THRIFT_CONN_ERROR;
+          se.message = "Failed to connect to social-graph-storage-service";
           throw se;
         }
-        auto collection = mongoc_client_get_collection(
-            mongodb_client, "social-graph", "social-graph");
-        if (!collection) {
-          ServiceException se;
-          se.errorCode = ErrorCode::SE_MONGODB_ERROR;
-          se.message = "Failed to create collection social_graph from MongoDB";
-          mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
-          throw se;
-        }
+        auto social_graph_storage_client = social_graph_storage_client_wrapper->GetClient();
 
         // Update follower->followee edges
-        const bson_t *doc;
-        bson_t *search_not_exist = BCON_NEW(
-            "$and", "[", "{", "user_id", BCON_INT64(user_id), "}", "{",
-            "followees", "{", "$not", "{", "$elemMatch", "{", "user_id",
-            BCON_INT64(followee_id), "}", "}", "}", "}", "]");
-        bson_t *update = BCON_NEW("$push", "{", "followees", "{", "user_id",
-                                  BCON_INT64(followee_id), "timestamp",
-                                  BCON_INT64(timestamp), "}", "}");
-        bson_error_t error;
-        bson_t reply;
-        auto update_span = opentracing::Tracer::Global()->StartSpan(
-            "mongo_update_client", {opentracing::ChildOf(&span->context())});
-        bool updated = mongoc_collection_find_and_modify(
-            collection, search_not_exist, nullptr, update, nullptr, false,
-            false, true, &reply, &error);
-        if (!updated) {
-          LOG(error) << "Failed to update social graph for user " << user_id
-                     << " to MongoDB: " << error.message;
-          ServiceException se;
-          se.errorCode = ErrorCode::SE_MONGODB_ERROR;
-          se.message = error.message;
-          bson_destroy(&reply);
-          bson_destroy(update);
-          bson_destroy(search_not_exist);
-          mongoc_collection_destroy(collection);
-          mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
-          throw se;
+        try {
+          social_graph_storage_client->AddFollowee(user_id, followee_id);
+        } catch (...) {
+          _social_graph_storage_client_pool->Remove(social_graph_storage_client_wrapper);
+          LOG(error) << "Failed to add followee to social_graph_storage";
+          throw;
         }
-        update_span->Finish();
-        bson_destroy(&reply);
-        bson_destroy(update);
-        bson_destroy(search_not_exist);
-        mongoc_collection_destroy(collection);
-        mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
+        _social_graph_storage_client_pool->Keepalive(social_graph_storage_client_wrapper);
+
       });
 
-  std::future<void> mongo_update_followee_future =
+  std::future<void> update_followee_future =
       std::async(std::launch::async, [&]() {
-        mongoc_client_t *mongodb_client =
-            mongoc_client_pool_pop(_mongodb_client_pool);
-        if (!mongodb_client) {
+        auto social_graph_storage_client_wrapper = _social_graph_storage_client_pool->Pop();
+        if (!social_graph_storage_client_wrapper) {
           ServiceException se;
-          se.errorCode = ErrorCode::SE_MONGODB_ERROR;
-          se.message = "Failed to pop a client from MongoDB pool";
+          se.errorCode = ErrorCode::SE_THRIFT_CONN_ERROR;
+          se.message = "Failed to connect to social-graph-storage-service";
           throw se;
         }
-        auto collection = mongoc_client_get_collection(
-            mongodb_client, "social-graph", "social-graph");
-        if (!collection) {
-          ServiceException se;
-          se.errorCode = ErrorCode::SE_MONGODB_ERROR;
-          se.message = "Failed to create collection social_graph from MongoDB";
-          mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
-          throw se;
-        }
+        auto social_graph_storage_client = social_graph_storage_client_wrapper->GetClient();
 
         // Update followee->follower edges
-        bson_t *search_not_exist =
-            BCON_NEW("$and", "[", "{", "user_id", BCON_INT64(followee_id), "}",
-                     "{", "followers", "{", "$not", "{", "$elemMatch", "{",
-                     "user_id", BCON_INT64(user_id), "}", "}", "}", "}", "]");
-        bson_t *update = BCON_NEW("$push", "{", "followers", "{", "user_id",
-                                  BCON_INT64(user_id), "timestamp",
-                                  BCON_INT64(timestamp), "}", "}");
-        bson_error_t error;
-        auto update_span = opentracing::Tracer::Global()->StartSpan(
-            "social_graph_mongo_update_client",
-            {opentracing::ChildOf(&span->context())});
-        bson_t reply;
-        bool updated = mongoc_collection_find_and_modify(
-            collection, search_not_exist, nullptr, update, nullptr, false,
-            false, true, &reply, &error);
-        if (!updated) {
-          LOG(error) << "Failed to update social graph for user " << followee_id
-                     << " to MongoDB: " << error.message;
-          ServiceException se;
-          se.errorCode = ErrorCode::SE_MONGODB_ERROR;
-          se.message = error.message;
-          bson_destroy(update);
-          bson_destroy(&reply);
-          bson_destroy(search_not_exist);
-          mongoc_collection_destroy(collection);
-          mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
-          throw se;
+        try {
+          social_graph_storage_client->AddFollower(followee_id, user_id);
+        } catch (...) {
+          _social_graph_storage_client_pool->Remove(social_graph_storage_client_wrapper);
+          LOG(error) << "Failed to add follower to social_graph_storage";
+          throw;
         }
-        update_span->Finish();
-        bson_destroy(update);
-        bson_destroy(&reply);
-        bson_destroy(search_not_exist);
-        mongoc_collection_destroy(collection);
-        mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
+        _social_graph_storage_client_pool->Keepalive(social_graph_storage_client_wrapper);
       });
 
-  std::future<void> redis_update_future = std::async(std::launch::async, [&]() {
-    auto redis_span = opentracing::Tracer::Global()->StartSpan(
-        "social_graph_redis_update_client",
-        {opentracing::ChildOf(&span->context())});
-
-    {
-      if (_redis_client_pool) {
-        auto pipe = _redis_client_pool->pipeline(false);
-        pipe.zadd(std::to_string(user_id) + ":followees",
-                  std::to_string(followee_id), timestamp, UpdateType::NOT_EXIST)
-            .zadd(std::to_string(followee_id) + ":followers",
-                  std::to_string(user_id), timestamp, UpdateType::NOT_EXIST);
-        try {
-          auto replies = pipe.exec();
-        } catch (const Error &err) {
-          LOG(error) << err.what();
-          throw err;
-        }
-      } else {
-        // TODO: Redis++ currently does not support pipeline with multiple
-        //       hashtags in cluster mode.
-        //       Currently, we send one request for each follower, which may
-        //       incur some performance overhead. We are following the updates
-        //       of Redis++ clients:
-        //       https://github.com/sewenew/redis-plus-plus/issues/212
-        try {
-          _redis_cluster_client_pool->zadd(
-              std::to_string(user_id) + ":followees",
-              std::to_string(followee_id), timestamp, UpdateType::NOT_EXIST);
-          _redis_cluster_client_pool->zadd(
-              std::to_string(followee_id) + ":followers",
-              std::to_string(user_id), timestamp, UpdateType::NOT_EXIST);
-        } catch (const Error &err) {
-          LOG(error) << err.what();
-          throw err;
-        }
-      }
-    }
-    redis_span->Finish();
-  });
-
   try {
-    redis_update_future.get();
-    mongo_update_follower_future.get();
-    mongo_update_followee_future.get();
+    update_follower_future.get();
+    update_followee_future.get();
   } catch (const std::exception &e) {
     LOG(warning) << e.what();
     throw;
@@ -270,156 +138,63 @@ void SocialGraphHandler::Unfollow(
   TextMapWriter writer(writer_text_map);
   auto parent_span = opentracing::Tracer::Global()->Extract(reader);
   auto span = opentracing::Tracer::Global()->StartSpan(
-      "unfollow_server", {opentracing::ChildOf(parent_span->get())});
+      "follow_server", {opentracing::ChildOf(parent_span->get())});
   opentracing::Tracer::Global()->Inject(span->context(), writer);
 
-  std::future<void> mongo_update_follower_future =
+  int64_t timestamp =
+      duration_cast<milliseconds>(system_clock::now().time_since_epoch())
+          .count();
+
+  std::future<void> update_follower_future =
       std::async(std::launch::async, [&]() {
-        mongoc_client_t *mongodb_client =
-            mongoc_client_pool_pop(_mongodb_client_pool);
-        if (!mongodb_client) {
+        auto social_graph_storage_client_wrapper = _social_graph_storage_client_pool->Pop();
+        if (!social_graph_storage_client_wrapper) {
           ServiceException se;
-          se.errorCode = ErrorCode::SE_MONGODB_ERROR;
-          se.message = "Failed to pop a client from MongoDB pool";
+          se.errorCode = ErrorCode::SE_THRIFT_CONN_ERROR;
+          se.message = "Failed to connect to social-graph-storage-service";
           throw se;
         }
-        auto collection = mongoc_client_get_collection(
-            mongodb_client, "social-graph", "social-graph");
-        if (!collection) {
-          ServiceException se;
-          se.errorCode = ErrorCode::SE_MONGODB_ERROR;
-          se.message = "Failed to create collection social_graph from MongoDB";
-          mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
-          throw se;
-        }
-        bson_t *query = bson_new();
+        auto social_graph_storage_client = social_graph_storage_client_wrapper->GetClient();
 
         // Update follower->followee edges
-        BSON_APPEND_INT64(query, "user_id", user_id);
-        bson_t *update = BCON_NEW("$pull", "{", "followees", "{", "user_id",
-                                  BCON_INT64(followee_id), "}", "}");
-        bson_t reply;
-        bson_error_t error;
-        auto update_span = opentracing::Tracer::Global()->StartSpan(
-            "social_graph_mongo_delete_client",
-            {opentracing::ChildOf(&span->context())});
-        bool updated = mongoc_collection_find_and_modify(
-            collection, query, nullptr, update, nullptr, false, false, true,
-            &reply, &error);
-        if (!updated) {
-          LOG(error) << "Failed to delete social graph for user " << user_id
-                     << " to MongoDB: " << error.message;
-          ServiceException se;
-          se.errorCode = ErrorCode::SE_MONGODB_ERROR;
-          se.message = error.message;
-          bson_destroy(update);
-          bson_destroy(query);
-          bson_destroy(&reply);
-          mongoc_collection_destroy(collection);
-          mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
-          throw se;
+        try {
+          social_graph_storage_client->RemoveFollowee(user_id, followee_id);
+        } catch (...) {
+          _social_graph_storage_client_pool->Remove(social_graph_storage_client_wrapper);
+          LOG(error) << "Failed to remove followee from social_graph_storage";
+          throw;
         }
-        update_span->Finish();
-        bson_destroy(update);
-        bson_destroy(query);
-        bson_destroy(&reply);
-        mongoc_collection_destroy(collection);
-        mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
+        _social_graph_storage_client_pool->Keepalive(social_graph_storage_client_wrapper);
       });
 
-  std::future<void> mongo_update_followee_future =
+  std::future<void> update_followee_future =
       std::async(std::launch::async, [&]() {
-        mongoc_client_t *mongodb_client =
-            mongoc_client_pool_pop(_mongodb_client_pool);
-        if (!mongodb_client) {
+        auto social_graph_storage_client_wrapper = _social_graph_storage_client_pool->Pop();
+        if (!social_graph_storage_client_wrapper) {
           ServiceException se;
-          se.errorCode = ErrorCode::SE_MONGODB_ERROR;
-          se.message = "Failed to pop a client from MongoDB pool";
+          se.errorCode = ErrorCode::SE_THRIFT_CONN_ERROR;
+          se.message = "Failed to connect to social-graph-storage-service";
           throw se;
         }
-        auto collection = mongoc_client_get_collection(
-            mongodb_client, "social-graph", "social-graph");
-        if (!collection) {
-          ServiceException se;
-          se.errorCode = ErrorCode::SE_MONGODB_ERROR;
-          se.message = "Failed to create collection social_graph from MongoDB";
-          mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
-          throw se;
-        }
-        bson_t *query = bson_new();
+        auto social_graph_storage_client = social_graph_storage_client_wrapper->GetClient();
 
         // Update followee->follower edges
-        BSON_APPEND_INT64(query, "user_id", followee_id);
-        bson_t *update = BCON_NEW("$pull", "{", "followers", "{", "user_id",
-                                  BCON_INT64(user_id), "}", "}");
-        bson_t reply;
-        bson_error_t error;
-        auto update_span = opentracing::Tracer::Global()->StartSpan(
-            "social_graph_mongo_delete_client",
-            {opentracing::ChildOf(&span->context())});
-        bool updated = mongoc_collection_find_and_modify(
-            collection, query, nullptr, update, nullptr, false, false, true,
-            &reply, &error);
-        if (!updated) {
-          LOG(error) << "Failed to delete social graph for user " << followee_id
-                     << " to MongoDB: " << error.message;
-          ServiceException se;
-          se.errorCode = ErrorCode::SE_MONGODB_ERROR;
-          se.message = error.message;
-          bson_destroy(update);
-          bson_destroy(query);
-          bson_destroy(&reply);
-          mongoc_collection_destroy(collection);
-          mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
-          throw se;
+        try {
+          social_graph_storage_client->RemoveFollower(followee_id, user_id);
+        } catch (...) {
+          _social_graph_storage_client_pool->Remove(social_graph_storage_client_wrapper);
+          LOG(error) << "Failed to remove follower from social_graph_storage";
+          throw;
         }
-        update_span->Finish();
-        bson_destroy(update);
-        bson_destroy(query);
-        bson_destroy(&reply);
-        mongoc_collection_destroy(collection);
-        mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
+        _social_graph_storage_client_pool->Keepalive(social_graph_storage_client_wrapper);
       });
 
-  std::future<void> redis_update_future = std::async(std::launch::async, [&]() {
-    auto redis_span = opentracing::Tracer::Global()->StartSpan(
-        "social_graph_redis_update_client",
-        {opentracing::ChildOf(&span->context())});
-    {
-      if (_redis_client_pool) {
-        auto pipe = _redis_client_pool->pipeline(false);
-        std::string followee_key = std::to_string(user_id) + ":followees";
-        std::string follower_key = std::to_string(followee_id) + ":followers";
-        pipe.zrem(followee_key, std::to_string(followee_id))
-            .zrem(follower_key, std::to_string(user_id));
-
-        try {
-          auto replies = pipe.exec();
-        } catch (const Error &err) {
-          LOG(error) << err.what();
-          throw err;
-        }
-      } else {
-        std::string followee_key = std::to_string(user_id) + ":followees";
-        std::string follower_key = std::to_string(followee_id) + ":followers";
-        try {
-          _redis_cluster_client_pool->zrem(followee_key,
-                                           std::to_string(followee_id));
-          _redis_cluster_client_pool->zrem(follower_key,
-                                           std::to_string(user_id));
-        } catch (const Error &err) {
-          LOG(error) << err.what();
-          throw err;
-        }
-      }
-    }
-    redis_span->Finish();
-  });
-
   try {
-    redis_update_future.get();
-    mongo_update_follower_future.get();
-    mongo_update_followee_future.get();
+    update_follower_future.get();
+    update_followee_future.get();
+  } catch (const std::exception &e) {
+    LOG(warning) << e.what();
+    throw;
   } catch (...) {
     throw;
   }
@@ -439,120 +214,30 @@ void SocialGraphHandler::GetFollowers(
       "get_followers_server", {opentracing::ChildOf(parent_span->get())});
   opentracing::Tracer::Global()->Inject(span->context(), writer);
 
-  auto redis_span = opentracing::Tracer::Global()->StartSpan(
-      "social_graph_redis_get_client",
-      {opentracing::ChildOf(&span->context())});
+  auto social_graph_storage_client_wrapper = _social_graph_storage_client_pool->Pop();
+  if (!social_graph_storage_client_wrapper) {
+    ServiceException se;
+    se.errorCode = ErrorCode::SE_THRIFT_CONN_ERROR;
+    se.message = "Failed to connect to social-graph-storage-service";
+    throw se;
+  }
+  auto social_graph_storage_client = social_graph_storage_client_wrapper->GetClient();
 
-  std::vector<std::string> followers_str;
-  std::string key = std::to_string(user_id) + ":followers";
+  std::vector<int64_t> followers;
   try {
-    if (_redis_client_pool) {
-      _redis_client_pool->zrange(key, 0, -1, std::back_inserter(followers_str));
-    } else {
-      _redis_cluster_client_pool->zrange(key, 0, -1,
-                                         std::back_inserter(followers_str));
-    }
-  } catch (const Error &err) {
-    LOG(error) << err.what();
-    throw err;
+    social_graph_storage_client->ReadFollowers(followers, user_id);
+  } catch (...) {
+    _social_graph_storage_client_pool->Remove(social_graph_storage_client_wrapper);
+    LOG(error) << "Failed to get read followers from social_graph-storage-service";
+    throw;
   }
-  redis_span->Finish();
+  _social_graph_storage_client_pool->Keepalive(social_graph_storage_client_wrapper);
 
-  // If user_id in the sodical graph Redis server, read from Redis
-  if (followers_str.size() > 0) {
-    for (auto const &follower_str : followers_str) {
-      _return.emplace_back(std::stoul(follower_str));
-    }
-  }
-  // If user_id in the sodical graph Redis server, read from MongoDB and
-  // update Redis.
-  else {
-    mongoc_client_t *mongodb_client =
-        mongoc_client_pool_pop(_mongodb_client_pool);
-    if (!mongodb_client) {
-      ServiceException se;
-      se.errorCode = ErrorCode::SE_MONGODB_ERROR;
-      se.message = "Failed to pop a client from MongoDB pool";
-      throw se;
-    }
-    auto collection = mongoc_client_get_collection(
-        mongodb_client, "social-graph", "social-graph");
-    if (!collection) {
-      ServiceException se;
-      se.errorCode = ErrorCode::SE_MONGODB_ERROR;
-      se.message = "Failed to create collection social_graph from MongoDB";
-      mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
-      throw se;
-    }
-    bson_t *query = bson_new();
-    BSON_APPEND_INT64(query, "user_id", user_id);
-    auto find_span = opentracing::Tracer::Global()->StartSpan(
-        "social_graph_mongo_find_client",
-        {opentracing::ChildOf(&span->context())});
-    mongoc_cursor_t *cursor =
-        mongoc_collection_find_with_opts(collection, query, nullptr, nullptr);
-    const bson_t *doc;
-    bool found = mongoc_cursor_next(cursor, &doc);
-    if (found) {
-      bson_iter_t iter_0;
-      bson_iter_t iter_1;
-      bson_iter_t user_id_child;
-      bson_iter_t timestamp_child;
-      int index = 0;
-      std::unordered_map<std::string, double> redis_zset;
-      bson_iter_init(&iter_0, doc);
-      bson_iter_init(&iter_1, doc);
-
-      while (bson_iter_find_descendant(
-                 &iter_0,
-                 ("followers." + std::to_string(index) + ".user_id").c_str(),
-                 &user_id_child) &&
-             BSON_ITER_HOLDS_INT64(&user_id_child) &&
-             bson_iter_find_descendant(
-                 &iter_1,
-                 ("followers." + std::to_string(index) + ".timestamp").c_str(),
-                 &timestamp_child) &&
-             BSON_ITER_HOLDS_INT64(&timestamp_child)) {
-        auto iter_user_id = bson_iter_int64(&user_id_child);
-        auto iter_timestamp = bson_iter_int64(&timestamp_child);
-        _return.emplace_back(iter_user_id);
-        redis_zset.emplace(std::pair<std::string, double>(
-            std::to_string(iter_user_id), (double)iter_timestamp));
-        bson_iter_init(&iter_0, doc);
-        bson_iter_init(&iter_1, doc);
-        index++;
-      }
-      find_span->Finish();
-      bson_destroy(query);
-      mongoc_cursor_destroy(cursor);
-      mongoc_collection_destroy(collection);
-      mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
-
-      // Update Redis
-      std::string key = std::to_string(user_id) + ":followers";
-      auto redis_insert_span = opentracing::Tracer::Global()->StartSpan(
-          "social_graph_redis_insert_client",
-          {opentracing::ChildOf(&span->context())});
-      try {
-        if (_redis_client_pool) {
-          _redis_client_pool->zadd(key, redis_zset.begin(), redis_zset.end());
-        } else {
-          _redis_cluster_client_pool->zadd(key, redis_zset.begin(),
-                                           redis_zset.end());
-        }
-      } catch (const Error &err) {
-        LOG(error) << err.what();
-        throw err;
-      }
-      redis_span->Finish();
-    } else {
+  bool found = true;
+  if (found) {
+      _return = followers;
+  } else {
       LOG(warning) << "user_id: " << user_id << " not found";
-      find_span->Finish();
-      bson_destroy(query);
-      mongoc_cursor_destroy(cursor);
-      mongoc_collection_destroy(collection);
-      mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
-    }
   }
   span->Finish();
 }
@@ -566,130 +251,33 @@ void SocialGraphHandler::GetFollowees(
   TextMapWriter writer(writer_text_map);
   auto parent_span = opentracing::Tracer::Global()->Extract(reader);
   auto span = opentracing::Tracer::Global()->StartSpan(
-      "get_followees_server", {opentracing::ChildOf(parent_span->get())});
+      "get_followers_server", {opentracing::ChildOf(parent_span->get())});
   opentracing::Tracer::Global()->Inject(span->context(), writer);
 
-  auto redis_span = opentracing::Tracer::Global()->StartSpan(
-      "social_graph_redis_get_client",
-      {opentracing::ChildOf(&span->context())});
+  auto social_graph_storage_client_wrapper = _social_graph_storage_client_pool->Pop();
+  if (!social_graph_storage_client_wrapper) {
+    ServiceException se;
+    se.errorCode = ErrorCode::SE_THRIFT_CONN_ERROR;
+    se.message = "Failed to connect to social-graph-storage-service";
+    throw se;
+  }
+  auto social_graph_storage_client = social_graph_storage_client_wrapper->GetClient();
 
-  std::vector<std::string> followees_str;
-  std::string key = std::to_string(user_id) + ":followees";
+  std::vector<int64_t> followees;
   try {
-    if (_redis_client_pool) {
-      _redis_client_pool->zrange(key, 0, -1, std::back_inserter(followees_str));
-    } else {
-      _redis_cluster_client_pool->zrange(key, 0, -1,
-                                         std::back_inserter(followees_str));
-    }
-  } catch (const Error &err) {
-    LOG(error) << err.what();
-    throw err;
+    social_graph_storage_client->ReadFollowees(followees, user_id);
+  } catch (...) {
+    _social_graph_storage_client_pool->Remove(social_graph_storage_client_wrapper);
+    LOG(error) << "Failed to read followees from social_graph_storage";
+    throw;
   }
-  redis_span->Finish();
+  _social_graph_storage_client_pool->Keepalive(social_graph_storage_client_wrapper);
 
-  // If user_id in the sodical graph Redis server, read from Redis
-  if (followees_str.size() > 0) {
-    for (auto const &followee_str : followees_str) {
-      _return.emplace_back(std::stoul(followee_str));
-    }
-  }
-  // If user_id in the sodical graph Redis server, read from MongoDB and
-  // update Redis.
-  else {
-    redis_span->Finish();
-    mongoc_client_t *mongodb_client =
-        mongoc_client_pool_pop(_mongodb_client_pool);
-    if (!mongodb_client) {
-      ServiceException se;
-      se.errorCode = ErrorCode::SE_MONGODB_ERROR;
-      se.message = "Failed to pop a client from MongoDB pool";
-      throw se;
-    }
-    auto collection = mongoc_client_get_collection(
-        mongodb_client, "social-graph", "social-graph");
-    if (!collection) {
-      ServiceException se;
-      se.errorCode = ErrorCode::SE_MONGODB_ERROR;
-      se.message = "Failed to create collection social_graph from MongoDB";
-      mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
-      throw se;
-    }
-    bson_t *query = bson_new();
-    BSON_APPEND_INT64(query, "user_id", user_id);
-    auto find_span = opentracing::Tracer::Global()->StartSpan(
-        "social_graph_mongo_find_client",
-        {opentracing::ChildOf(&span->context())});
-    mongoc_cursor_t *cursor =
-        mongoc_collection_find_with_opts(collection, query, nullptr, nullptr);
-    const bson_t *doc;
-    bool found = mongoc_cursor_next(cursor, &doc);
-    if (!found) {
-      ServiceException se;
-      se.errorCode = ErrorCode::SE_THRIFT_HANDLER_ERROR;
-      se.message = "Cannot find user_id in MongoDB.";
-      bson_destroy(query);
-      mongoc_cursor_destroy(cursor);
-      mongoc_collection_destroy(collection);
-      mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
-      throw se;
-    } else {
-      bson_iter_t iter_0;
-      bson_iter_t iter_1;
-      bson_iter_t user_id_child;
-      bson_iter_t timestamp_child;
-      int index = 0;
-
-      bson_iter_init(&iter_0, doc);
-      bson_iter_init(&iter_1, doc);
-
-      std::multimap<std::string, double> redis_zset;
-
-      while (bson_iter_find_descendant(
-                 &iter_0,
-                 ("followees." + std::to_string(index) + ".user_id").c_str(),
-                 &user_id_child) &&
-             BSON_ITER_HOLDS_INT64(&user_id_child) &&
-             bson_iter_find_descendant(
-                 &iter_1,
-                 ("followees." + std::to_string(index) + ".timestamp").c_str(),
-                 &timestamp_child) &&
-             BSON_ITER_HOLDS_INT64(&timestamp_child)) {
-        auto iter_user_id = bson_iter_int64(&user_id_child);
-        auto iter_timestamp = bson_iter_int64(&timestamp_child);
-        _return.emplace_back(iter_user_id);
-
-        redis_zset.emplace(std::pair<std::string, double>(
-            std::to_string(iter_user_id), (double)iter_timestamp));
-        bson_iter_init(&iter_0, doc);
-        bson_iter_init(&iter_1, doc);
-        index++;
-      }
-
-      find_span->Finish();
-      bson_destroy(query);
-      mongoc_cursor_destroy(cursor);
-      mongoc_collection_destroy(collection);
-      mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
-
-      // Update redis
-      std::string key = std::to_string(user_id) + ":followees";
-      auto redis_insert_span = opentracing::Tracer::Global()->StartSpan(
-          "social_graph_redis_insert_client",
-          {opentracing::ChildOf(&span->context())});
-      try {
-        if (_redis_client_pool) {
-          _redis_client_pool->zadd(key, redis_zset.begin(), redis_zset.end());
-        } else {
-          _redis_cluster_client_pool->zadd(key, redis_zset.begin(),
-                                           redis_zset.end());
-        }
-      } catch (const Error &err) {
-        LOG(error) << err.what();
-        throw err;
-      }
-      redis_span->Finish();
-    }
+  bool found = true;
+  if (found) {
+      _return = followees;
+  } else {
+      LOG(warning) << "user_id: " << user_id << " not found";
   }
   span->Finish();
 }
@@ -706,47 +294,8 @@ void SocialGraphHandler::InsertUser(
       "insert_user_server", {opentracing::ChildOf(parent_span->get())});
   opentracing::Tracer::Global()->Inject(span->context(), writer);
 
-  mongoc_client_t *mongodb_client =
-      mongoc_client_pool_pop(_mongodb_client_pool);
-  if (!mongodb_client) {
-    ServiceException se;
-    se.errorCode = ErrorCode::SE_MONGODB_ERROR;
-    se.message = "Failed to pop a client from MongoDB pool";
-    throw se;
-  }
-  auto collection = mongoc_client_get_collection(mongodb_client, "social-graph",
-                                                 "social-graph");
-  if (!collection) {
-    ServiceException se;
-    se.errorCode = ErrorCode::SE_MONGODB_ERROR;
-    se.message = "Failed to create collection social_graph from MongoDB";
-    mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
-    throw se;
-  }
+  // users are implicitly created when referenced
 
-  bson_t *new_doc = BCON_NEW("user_id", BCON_INT64(user_id), "followers", "[",
-                             "]", "followees", "[", "]");
-  bson_error_t error;
-  auto insert_span = opentracing::Tracer::Global()->StartSpan(
-      "social_graph_mongo_insert_client",
-      {opentracing::ChildOf(&span->context())});
-  bool inserted = mongoc_collection_insert_one(collection, new_doc, nullptr,
-                                               nullptr, &error);
-  insert_span->Finish();
-  if (!inserted) {
-    LOG(error) << "Failed to insert social graph for user " << user_id
-               << " to MongoDB: " << error.message;
-    ServiceException se;
-    se.errorCode = ErrorCode::SE_MONGODB_ERROR;
-    se.message = error.message;
-    bson_destroy(new_doc);
-    mongoc_collection_destroy(collection);
-    mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
-    throw se;
-  }
-  bson_destroy(new_doc);
-  mongoc_collection_destroy(collection);
-  mongoc_client_pool_push(_mongodb_client_pool, mongodb_client);
   span->Finish();
 }
 

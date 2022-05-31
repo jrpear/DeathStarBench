@@ -8,26 +8,22 @@ services:
     depends_on:
       jaeger-agent:
         condition: service_started
-      social-graph-mongodb:
+      social-graph-storage-service:
         condition: service_started
     restart: always
     entrypoint: SocialGraphService
     volumes:
       - ./config:/social-network-microservices/config
 
-  social-graph-mongodb:
-    image: mongo:4.4.6
-    hostname: social-graph-mongodb
-    # ports:
-    #   - 27018:27017
+  social-graph-storage-service:
+    image: yg397/social-network-microservices:latest
+    hostname: social-graph-storage-service
+    ports:
+      - 10012:9090
     restart: always
-
-  social-graph-redis:
-    image: redis
-    hostname: social-graph-redis
-    # ports:
-    #   - 6380:6379
-    restart: always
+    entrypoint: SocialGraphStorageService
+    volumes:
+      - ./config:/social-network-microservices/config
 
   home-timeline-redis:
     image: redis

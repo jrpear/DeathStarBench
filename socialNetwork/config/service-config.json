@@ -6,11 +6,11 @@
     "port": 9090,
     "connections": 512
   },
-  "social-graph-mongodb": {
+  "social-graph-storage-service": {
     "keepalive_ms": 10000,
-    "addr": "social-graph-mongodb",
+    "addr": "social-graph-storage-service",
     "timeout_ms": 10000,
-    "port": 27017,
+    "port": 9090,
     "connections": 512
   },
   "secret": "secret",
@@ -46,13 +46,6 @@
   "user-timeline-redis": {
     "keepalive_ms": 10000,
     "addr": "user-timeline-redis",
-    "timeout_ms": 10000,
-    "port": 6379,
-    "connections": 512
-  },
-  "social-graph-redis": {
-    "keepalive_ms": 10000,
-    "addr": "social-graph-redis",
     "timeout_ms": 10000,
     "port": 6379,
     "connections": 512
